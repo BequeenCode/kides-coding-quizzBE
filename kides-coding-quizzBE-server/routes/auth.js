@@ -1,68 +1,70 @@
-// routes/auth.js
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 
-// Register endpoint
+// Allowed admin emails
+const allowedAdminEmails = ['admin1@school.com', 'admin2@school.com'];
+
+// REGISTER
 router.post('/register', async (req, res) => {
   try {
-    console.log('Registration attempt:', req.body);
-    
-    const { name, username, password, role, age } = req.body;
+    const { name, username, password, role, age, email } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ username });
-    if (existingUser) {
-      console.log('Registration failed: Username already exists');
-      return res.status(400).json({ 
-        message: 'Username already exists',
-        error: 'USERNAME_EXISTS'
-      });
+    // Restrict admin registration
+    let userRole = role;
+    if (role === 'admin') {
+      if (!allowedAdminEmails.includes(email)) {
+        return res.status(403).json({ message: 'Admin registration restricted' });
+      }
+      userRole = 'admin';
+    } else {
+      userRole = 'kid';
     }
 
-    // Create new user
-    const user = new User({ name, username, password, role, age });
+    // Check if username/email exists
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Username or email already exists' });
+    }
+
+    const user = new User({ name, username, password, role: userRole, age, email });
     await user.save();
-    
-    console.log('User created successfully:', user._id);
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user._id }, 
-      process.env.JWT_SECRET || 'fallback_secret',
-      { expiresIn: '7d' }
-    );
+    const token = jwt.sign({ userId: user._id, role: userRole }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-    // Return success response
     res.status(201).json({
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        username: user.username,
-        role: user.role,
-        age: user.age
-      }
+      user: { id: user._id, name: user.name, username: user.username, role: user.role, age: user.age, email: user.email }
     });
-    
+
   } catch (error) {
     console.error('Registration error:', error);
-    
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({ 
-        message: 'Validation failed',
-        errors 
-      });
-    }
-    
-    // Handle other errors
-    res.status(500).json({ 
-      message: 'Server error during registration',
-      error: error.message 
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// LOGIN
+router.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    const user = await User.findOne({ username });
+    if (!user) return res.status(400).json({ message: 'Invalid username or password' });
+
+    const correct = await user.correctPassword(password);
+    if (!correct) return res.status(400).json({ message: 'Invalid username or password' });
+
+    const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    res.status(200).json({
+      token,
+      user: { id: user._id, name: user.name, username: user.username, role: user.role, age: user.age, email: user.email }
     });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
