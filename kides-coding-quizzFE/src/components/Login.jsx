@@ -5,9 +5,9 @@ import { authAPI } from '../utils/api';
 
 const Login = ({ setUser, setLoading }) => {
   const [formData, setFormData] = useState({
-    identifier: '', // can be username or email
+    username: '', // matches backend field
     password: '',
-    role: 'kid', // user selects if they are student or admin
+    role: 'kid', // just for UI redirect
   });
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -21,8 +21,8 @@ const Login = ({ setUser, setLoading }) => {
     if (setLoading) setLoading(true);
     setError('');
 
-    if (!formData.identifier.trim() || !formData.password) {
-      setError('Please enter both identifier and password');
+    if (!formData.username.trim() || !formData.password) {
+      setError('Please enter both username/email and password');
       setIsSubmitting(false);
       if (setLoading) setLoading(false);
       return;
@@ -32,31 +32,30 @@ const Login = ({ setUser, setLoading }) => {
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          username: formData.username,
+          password: formData.password,
+        }),
       });
 
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        const data = await response.json();
-        if (response.ok) {
-          localStorage.setItem('token', data.token);
-          localStorage.setItem('user', JSON.stringify(data.user));
-          if (setUser) setUser(data.user);
+      const data = await response.json();
 
-          navigate(data.user.role === 'admin' ? '/admin' : '/kid');
-        } else {
-          setError(data.message || `Login failed with status: ${response.status}`);
-        }
+      if (response.ok) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        if (setUser) setUser(data.user);
+
+        // Redirect based on role
+        navigate(data.user.role === 'admin' ? '/admin' : '/kid');
       } else {
-        const text = await response.text();
-        console.error('Server returned non-JSON response:', text.substring(0, 200));
-        setError('Server error: Invalid response format');
+        setError(data.message || 'Login failed');
       }
-    } catch (error) {
-      console.error('Login error:', error);
-      setError(error.message === 'Failed to fetch'
-        ? 'Cannot connect to server. Please check if backend is running.'
-        : 'Login failed. Please try again.'
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(
+        err.message.includes('Failed to fetch')
+          ? 'Cannot connect to server. Is backend running?'
+          : 'Login failed. Please try again.'
       );
     } finally {
       setIsSubmitting(false);
@@ -76,7 +75,7 @@ const Login = ({ setUser, setLoading }) => {
     label: { display: 'block', marginBottom: '5px', fontWeight: '600', color: '#34495e' },
     input: { width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '16px' },
     button: { width: '100%', padding: '12px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '6px', fontSize: '16px', cursor: 'pointer' },
-    errorText: { color: '#e74c3c', marginTop: '5px' }
+    errorText: { color: '#e74c3c', marginTop: '5px' },
   };
 
   return (
@@ -93,8 +92,8 @@ const Login = ({ setUser, setLoading }) => {
             </label>
             <input
               type={formData.role === 'admin' ? 'email' : 'text'}
-              name="identifier"
-              value={formData.identifier}
+              name="username"
+              value={formData.username}
               onChange={handleChange}
               style={styles.input}
               required

@@ -1,3 +1,4 @@
+// routes/auth.js
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
@@ -6,7 +7,7 @@ const jwt = require('jsonwebtoken');
 // Allowed admin emails
 const allowedAdminEmails = ['admin1@school.com', 'admin2@school.com'];
 
-// REGISTER
+// -------------------- REGISTER --------------------
 router.post('/register', async (req, res) => {
   try {
     const { name, username, password, role, age, email } = req.body;
@@ -22,20 +23,33 @@ router.post('/register', async (req, res) => {
       userRole = 'kid';
     }
 
-    // Check if username/email exists
+    // Check if username or email already exists
     const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
       return res.status(400).json({ message: 'Username or email already exists' });
     }
 
+    // Create user
     const user = new User({ name, username, password, role: userRole, age, email });
     await user.save();
 
-    const token = jwt.sign({ userId: user._id, role: userRole }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user._id, role: userRole },
+      process.env.JWT_SECRET || 'fallback_secret',
+      { expiresIn: '7d' }
+    );
 
     res.status(201).json({
       token,
-      user: { id: user._id, name: user.name, username: user.username, role: user.role, age: user.age, email: user.email }
+      user: {
+        id: user._id,
+        name: user.name,
+        username: user.username,
+        role: user.role,
+        age: user.age,
+        email: user.email
+      }
     });
 
   } catch (error) {
@@ -44,22 +58,36 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// LOGIN
+// -------------------- LOGIN --------------------
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    const user = await User.findOne({ username });
-    if (!user) return res.status(400).json({ message: 'Invalid username or password' });
+    // Find by username OR email
+    const user = await User.findOne({ $or: [{ username }, { email: username }] });
+    if (!user) return res.status(400).json({ message: 'Invalid username/email or password' });
 
-    const correct = await user.correctPassword(password);
-    if (!correct) return res.status(400).json({ message: 'Invalid username or password' });
+    // Check password
+    const correct = await user.correctPassword(password, user.password);
+    if (!correct) return res.status(400).json({ message: 'Invalid username/email or password' });
 
-    const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user._id, role: user.role },
+      process.env.JWT_SECRET || 'fallback_secret',
+      { expiresIn: '7d' }
+    );
 
     res.status(200).json({
       token,
-      user: { id: user._id, name: user.name, username: user.username, role: user.role, age: user.age, email: user.email }
+      user: {
+        id: user._id,
+        name: user.name,
+        username: user.username,
+        role: user.role,
+        age: user.age,
+        email: user.email
+      }
     });
 
   } catch (error) {
