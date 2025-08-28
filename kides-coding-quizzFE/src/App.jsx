@@ -8,43 +8,33 @@ import Login from './components/Login';
 import KidDashboard from './components/KidDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import LoadingSpinner from './components/LoadingSpinner';
+import { authAPI } from './utils/api'; // Import the API module
 import './App.css';
-
-// API base URL
-const API_BASE = 'http://localhost:5000/api';
 
 function App() {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Start with loading true
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     // Check if user is logged in on app load
     const token = localStorage.getItem('token');
     if (token) {
-      validateToken(token);
+      validateToken();
+    } else {
+      setLoading(false);
     }
   }, []);
 
-  const validateToken = async (token) => {
+  const validateToken = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/auth/me`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data.user);
-      } else {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-      }
+      setError(null);
+      const data = await authAPI.getMe();
+      setUser(data.user);
     } catch (error) {
       console.error('Token validation error:', error);
+      setError('Failed to validate session. Please log in again.');
       localStorage.removeItem('token');
       localStorage.removeItem('user');
     } finally {
@@ -52,32 +42,51 @@ function App() {
     }
   };
 
+  // Clear error after 5 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
   return (
     <Router>
       <div className="App">
         <Header user={user} setUser={setUser} loading={loading} />
-        {loading && <LoadingSpinner />}
+        {error && (
+          <div className="error-banner">
+            {error}
+            <button onClick={() => setError(null)}>Dismiss</button>
+          </div>
+        )}
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route 
             path="/register" 
             element={
               user ? <Navigate to={user.role === 'admin' ? '/admin' : '/kid'} /> : 
-              <Register setUser={setUser} setLoading={setLoading} />
+              <Register setUser={setUser} setLoading={setLoading} setError={setError} />
             } 
           />
           <Route 
             path="/login" 
             element={
               user ? <Navigate to={user.role === 'admin' ? '/admin' : '/kid'} /> : 
-              <Login setUser={setUser} setLoading={setLoading} />
+              <Login setUser={setUser} setLoading={setLoading} setError={setError} />
             } 
           />
           <Route 
             path="/kid" 
             element={
               user && user.role === 'kid' ? 
-              <KidDashboard user={user} setLoading={setLoading} /> : 
+              <KidDashboard user={user} setLoading={setLoading} setError={setError} /> : 
               <Navigate to="/login" />
             } 
           />
@@ -85,7 +94,7 @@ function App() {
             path="/admin" 
             element={
               user && user.role === 'admin' ? 
-              <AdminDashboard user={user} setLoading={setLoading} /> : 
+              <AdminDashboard user={user} setLoading={setLoading} setError={setError} /> : 
               <Navigate to="/login" />
             } 
           />
